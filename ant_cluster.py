@@ -16,7 +16,7 @@ class AntCluster(object):
 
     def similate(self, runs=None):
         if runs == None:
-            runs = len(self.ants) * 500
+            runs = len(self.ants) * 100
 
         for _ in tqdm(range(runs)):
             ant1, ant2 = sample(self.ants, 2)
