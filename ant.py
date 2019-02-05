@@ -1,4 +1,5 @@
 import numpy as np
+from util import thresh
 
 
 class Ant(object):
@@ -12,7 +13,7 @@ class Ant(object):
         self.treshold = 0
 
     def update_treshold(self):
-        self.treshold = (np.mean(self.memory) + np.max(self.memory)) / 2.0
+        self.treshold = thresh(self.memory)
 
     def exile(self):
         self.label = 0
