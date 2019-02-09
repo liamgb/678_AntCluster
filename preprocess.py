@@ -4,135 +4,82 @@ from nltk.tag import pos_tag
 from nltk.chunk import conlltags2tree, tree2conlltags
 from nltk.tokenize.treebank import TreebankWordTokenizer, TreebankWordDetokenizer
 from nltk.parse.stanford import StanfordDependencyParser
-
-from pprint import pprint
-from pprint import pformat
-
-import random
-import matplotlib.pyplot as plt
-import math
-import numpy as np
-import itertools
-import operator
-
 import spacy
 from spacy import displacy
 from collections import Counter
+from pprint import pprint
+from pprint import pformat
+import ast
 import en_core_web_sm
 nlp = en_core_web_sm.load()
+import re
+import matplotlib.pyplot as plt
+import numpy as np
 
-import ast
-from sklearn.cluster import MeanShift, estimate_bandwidth
+file = "Falling.txt"
 
-#text file of story
-file = "LRRH.txt"
+def find_elements(text, full=False, trim=True, low_trim_limit = 2, high_trim_limit = 2000):
+    sent = nltk.pos_tag(nltk.word_tokenize(text))
+    elements = dict()
+    if full: #do all nouns
+        for x in sent:
+            if x[1] == "NN" or x[1] == "NNS" or x[1] == "NNP" or x[1] == "NNPS" or x[1] == "PRP":
+                elements[x[0].lower()] = 0
+    else: #do only NE + extra
+        for x in sent:
+            if x[1] == "PRP":
+                elements[x[0].lower()] = 0
 
-#smaller chunking = more clusters/events
-chunkingSize = 65
-#65 = 50 clusters/events in Falling.txt
-#255 = 14
+        pattern = 'NP: {<DT>?<JJ>*<NN>}'
+        cp = nltk.RegexpParser(pattern)
+        cs = cp.parse(sent)
+        iob_tagged = tree2conlltags(cs)
+        parsed = pformat(iob_tagged)
+        parsed = ast.literal_eval(parsed)
+        tempString = ""
+        for x in parsed:
+            if x[2] == 'B-NP' or x[2] == 'I-NP':
+                tempString = tempString + x[0].lower() + " "
+            if x[2] == 'O' and len(tempString) > 0:
+                tempString = tempString.rstrip()
+                tempString = re.sub("^a ", "", re.sub("^an ", "", re.sub("^no ", "", re.sub("^this ", "", re.sub("^the ", "", tempString)))))
+                elements[tempString.rstrip().lower()] = 0
+                tempString = ""
 
-#show the plot of entities and clusters? (True/False)
-showPlot = True
+        doc = nlp(text)
+        parsed = pformat([(X.text, X.label_) for X in doc.ents])
+        parsed = ast.literal_eval(parsed)
+        for x in parsed:
+            if x[1] == 'PERSON' or x[1] == 'ORG' or x[1] == 'PRODUCT' or x[1] == 'LOC' or x[1] == 'FAC':
+                tempString = x[0].lower().replace('a ', '').replace('an ', '').replace('no ', '').replace('this ', '').replace('the ', '').replace('\n', '')
+                elements[tempString] = 0
 
-#trim elements that appear only once
-trimUnique = True
+    if trim:
+        text = text.lower()
+        for x in elements.keys():
+            elements[x] = my_count(text, x)
+        elements = {k: v for k, v in elements.items() if v > low_trim_limit}
+        elements = {k: v for k, v in elements.items() if v <= high_trim_limit}
 
+    pprint(elements)
+    return elements
 
-def run(text):
-    #Get list of entities
-    neList = createNElist(text)
+def my_count(string, substring):
+    substring = substring
+    string_size = len(string)
+    substring_size = len(substring)
+    count = 0
+    for i in range(0,string_size-substring_size+1):
+        if string[i:i+substring_size] == substring:
+            count+=1
+    return count
 
-    #Find the clusters of entities that might define events
-    clusters, entities = eventClusters(text, neList)
-
-    #Isolate the sections of the story where the clusters are
-    tokenClusters = clusterTokens(text, clusters)
-
-    #EXTRACT EVENTS!!!
-    events = list()
-    d = TreebankWordDetokenizer()
-
-    for c in range(len(tokenClusters)):
-        sent = d.detokenize(tokenClusters[c])
-
-        print(str(c) + " \"" + sent + "\"\n")
-
-        nlp = spacy.load('en_core_web_sm')
-        doc = nlp(sent)
-        '''
-        for token in doc:
-            print(token.text, token.lemma_, token.pos_, token.tag_, token.dep_,
-                  token.shape_, token.is_alpha, token.is_stop)
-        '''
-        subj = list()
-        obj = list()
-        verb = list()
-        for token in doc:
-            if token.dep_ == "nsubj" or token.dep_ == "csubj" or token.dep_ == "nsubjpass" or token.dep_ == "csubjpass" or token.dep_ == "pobj":
-                if token.lemma_ == "-PRON-":
-                    subj.append(token.text.lower())
-                else:
-                    subj.append(token.lemma_)
-            if token.dep_ == "obj" or token.dep_ == "dobj":
-                if token.lemma_ == "-PRON-":
-                    obj.append(token.text.lower())
-                else:
-                    obj.append(token.lemma_)
-            if token.dep_ == "ROOT":
-                if token.lemma_ == "-PRON-":
-                    verb.append(token.text.lower())
-                else:
-                    verb.append(token.lemma_)
-
-        #print("Subjects" + str(subj))
-        #print("Objects" + str(obj))
-        #print("Actions" + str(verb))
-
-        for e in verb:
-            if e == "be":
-                verb.remove("be")
-
-        #print(most_common(subj))
-        #print(most_common(verb))
-        #print(most_common(obj))
-        events.append([most_common(subj),most_common(verb),most_common(obj), "LOCATION", c])
-
-    pprint(events)
-
-def clusterTokens(text, clusters):
-    tokens = nltk.word_tokenize(text)
-
-    tokenClusters = list()
-    for c in range(len(clusters)):
-        stop = max(clusters[c])
-        start = min(clusters[c])
-        while True:
-            if start == 0:
-                break
-            if tokens[start] == '.':
-                start = start + 1
-                break
-            start = start - 1
-        while True:
-            if stop == len(tokens):
-                break
-            if tokens[stop] == '.':
-                break
-            stop = stop + 1
-        tokenClusters.append(tokens[start:stop+1])
-
-    return tokenClusters
-
-def eventClusters(text, neList):
-    tokens = nltk.word_tokenize(text)
-
+def create_feature_array(text, elements):
+    tokens = nltk.word_tokenize(text.lower())
     order = list()
     for t in tokens:
-        if t.lower() in neList.keys() and t.lower() not in order:
+        if t in elements.keys() and t.lower() not in order:
             order.append(t.lower())
-
-    #print(order)
 
     plt.axis([0,len(tokens),-1,len(order)])
     plt.ylabel('Entities')
@@ -140,141 +87,39 @@ def eventClusters(text, neList):
     plt.title('Clustering of Entities in Story')
 
     elementLocs = list()
+    elementIDs = list()
     for i in range(len(order)):
         for j in range(len(tokens)):
             if order[i] == tokens[j].lower():
                 plt.plot([j],[i],'ko')
                 elementLocs.append(j)
-
-    #for i in range(len(order)):
-    #    plt.plot([0, len(tokens)], [i,i], 'k')
+                elementIDs.append(i)
 
     textstr = ""
     for x in range(len(order)):
-        textstr = textstr + " " + str(x) + ": " + order[x] + " " + str(neList[order[x]]) + "\n"
+        textstr = textstr + " " + str(x) + ": " + order[x] + " " + str(elements[order[x]]) + "\n"
+    print(textstr)
     plt.text(0.02, 0.01, textstr, fontsize=6.7, transform=plt.gcf().transFigure)
 
-    #plt.show()
+    plt.show()
 
-    X = np.array(list(zip(elementLocs,np.zeros(len(elementLocs)))))
+    return elementLocs, elementIDs
 
-    '''CLUSTER CALL HERE!!!'''
-    #bandwidth = estimate_bandwidth(X, quantile=0.1)
-    ms = MeanShift(bandwidth=chunkingSize, bin_seeding=True)
-    #ms = MeanShift(bandwidth=chunkingSize, bin_seeding=True)
-    #print("BANDWIDTH: " + str(bandwidth))
+def raw_features_to_np_array(element_locations, element_order):
+    array = np.zeros([len(element_locations),2])
+    for x in range(len(element_locations)):
+        array[x,0] = element_locations[x]
+        array[x,1] = element_order[x]
+    np.set_printoptions(threshold=np.nan, suppress=True)
+    pprint(array)
+    return array
 
-    ms.fit(X)
-    labels = ms.labels_
-    cluster_centers = ms.cluster_centers_
-    '''CLUSTER CALL END!!!'''
 
-    labels_unique = np.unique(labels)
-    n_clusters_ = len(labels_unique)
-
-    clusters = list()
-    starts = list()
-    for k in range(n_clusters_):
-        my_members = labels == k
-        #print("Cluster {0}: {1}".format(k, X[my_members, 0]))
-        temp = ast.literal_eval("{1}".format(k, X[my_members, 0]).replace('.',','))
-        clusters.append(temp)
-        plt.plot([min(temp), min(temp)], [0,len(order)], 'r')
-        starts.append(min(temp))
-
-    #print(len(clusters))
-
-    clusters.sort(key = getmin)
-    if showPlot:
-        plt.show()
-
-    return clusters, order
-
-def getmin(element):
-    return min(element)
-
-def createNElist(text):
-    foci = dict()
-
-    sent = nltk.pos_tag(nltk.word_tokenize(text))
-
-    for x in sent:
-        if x[0].lower() == 'i' or x[0].lower() == 'he' or x[0].lower() == 'she':
-            if x[0].lower() in foci.keys():
-                foci[x[0].lower()] = foci[x[0].lower()] + 1
-            else:
-                foci[x[0].lower()] = 1
-
-    pattern = 'NP: {<DT>?<JJ>*<NN>}'
-    cp = nltk.RegexpParser(pattern)
-    cs = cp.parse(sent)
-    iob_tagged = tree2conlltags(cs)
-    parsed = pformat(iob_tagged)
-    parsed = ast.literal_eval(parsed)
-
-    tempString = ""
-    for x in parsed:
-        if x[2] == 'B-NP' or x[2] == 'I-NP':
-            tempString = tempString + x[0].lower() + " "
-        if x[2] == 'O' and len(tempString) > 0:
-            tempString = tempString.replace('a ', '').replace('an ', '').replace('no ', '').replace('this ', '').replace('the ', '')
-            if tempString.rstrip() in foci.keys():
-                foci[tempString.rstrip()] = foci[tempString.rstrip()] + 1
-            else:
-                foci[tempString.rstrip()] = 1
-            tempString = ""
-
-    doc = nlp(text)
-    parsed = pformat([(X.text, X.label_) for X in doc.ents])
-    parsed = ast.literal_eval(parsed)
-    for x in parsed:
-        if x[1] == 'PERSON' or x[1] == 'ORG' or x[1] == 'PRODUCT' or x[1] == 'LOC' or x[1] == 'FAC':
-            tempString = x[0].lower().replace('a ', '').replace('an ', '').replace('no ', '').replace('this ', '').replace('the ', '')
-            if tempString in foci.keys():
-                foci[tempString] = foci[tempString] + 1
-            else:
-                foci[tempString] = 1
-
-    #if trimUnique:
-    #    foci = {k: v for k, v in foci.items() if v != 1}
-
-    foci["we"] = 0
-
-    for k in foci.keys():
-        foci[k] = 0
-    for t in nltk.word_tokenize(text):
-        if t.lower() in foci.keys():
-            foci[t.lower()] = foci[t.lower()] + 1
-
-    #pprint(foci.keys())
-
-    return foci
-
-def most_common(L):
-  # get an iterable of (item, iterable) pairs
-  SL = sorted((x, i) for i, x in enumerate(L))
-  # print 'SL:', SL
-  groups = itertools.groupby(SL, key=operator.itemgetter(0))
-  # auxiliary function to get "quality" for an item
-  def _auxfun(g):
-    item, iterable = g
-    count = 0
-    min_index = len(L)
-    for _, where in iterable:
-      count += 1
-      min_index = min(min_index, where)
-    # print 'item %r, count %r, minind %r' % (item, count, min_index)
-    return count, -min_index
-  # pick the highest-count/earliest item
-  return max(groups, key=_auxfun)[0]
-
-def plotClusterComparison14(max,annotations,color):
-    for x in annotations:
-        plt.plot([x, x], [0,max], color)
-
-def main():
+def preprocess(file):
     text = open(file, "r").read()
-    run(text)
+    elements = find_elements(text)
+    element_locations, element_order = create_feature_array(text, elements)
+    raw_features_to_np_array(element_locations, element_order)
 
 if __name__ == '__main__':
-    main()
+    preprocess(file)
