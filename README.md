@@ -1,4 +1,6 @@
 # 678_AntCluster
+
+## Basics from the paper
 + Ant
     * pharomone == attributes
     * similarity threshold -> same nest

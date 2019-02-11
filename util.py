@@ -21,6 +21,10 @@ def dec(M, alpha):
     return (1 - alpha) * M
 
 
+def thresh(memory):
+    return (np.mean(memory) + np.max(memory)) / 2.0
+
+
 if __name__ == "__main__":
     a = np.array([1, 1, 0])
     b = np.array([1, 0, 1])
