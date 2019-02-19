@@ -4,18 +4,21 @@ from random import sample
 from collections import defaultdict
 from tqdm import tqdm
 
+
 class AntCluster(object):
-    def __init__(self, data, alpha=0.2, label=None):
+    def __init__(self, data, alpha=0.2, label=None, mask=None, option=None):
+        self.mask = mask
+        self.option = option
         self.al = alpha
         self.nest_counter = 1
-        if label == None:
+        if label is None:
             self.ants = set([Ant(datum) for datum in data.tolist()])
         else:
             self.ants = set([Ant(datum, true_label=label[i])
                              for i, datum in enumerate(data.tolist())])
 
     def similate(self, runs=None):
-        if runs == None:
+        if runs is None:
             runs = len(self.ants) * 100
 
         for _ in tqdm(range(runs)):
@@ -31,7 +34,13 @@ class AntCluster(object):
         return groups.values()
 
     def meet(self, ant1, ant2):
-        sim = similarity(ant1.gene, ant2.gene)
+        if self.option is None:
+            sim = similarity(ant1.gene, ant2.gene)
+        elif self.option == "mixed":
+            sim = similarity(ant1.gene, ant2.gene, self.mask, option=self.option)
+        else:
+            sim = similarity(ant1.gene, ant2.gene, option=self.option)
+
         accept = acceptance(sim, ant1.treshold, ant2.treshold)
 
         if ant1.label == ant2.label == 0 and accept:
