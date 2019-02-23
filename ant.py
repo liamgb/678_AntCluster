@@ -8,8 +8,8 @@ class Ant(object):
         self.gene = np.array(gene)  # np.array
         self.memory = []  # list of similarities with previously met ants
         self.label = 0
-        self.M = 0
-        self.M_p = 0
+        self.M = 0  # estimation of nest size
+        self.M_p = 0  # sense of belonging
         self.treshold = 0
 
     def update_treshold(self):

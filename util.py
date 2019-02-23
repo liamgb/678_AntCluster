@@ -3,7 +3,10 @@ from scipy.spatial.distance import cosine
 from functools import partial
 
 
-def similarity(gene_i, gene_j, *args, option="cosine"):
+def similarity(gene_i, gene_j, *args, option=None):
+    if option is None:
+        option = "cosine"
+
     switcher = {
         "cosine": (lambda: 1 - cosine(gene_i, gene_j)),
         "discrete": (lambda: np.mean(np.equal(gene_i, gene_j))),
